@@ -36,13 +36,23 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 240px 1fr 300px;
   height: 100vh;
 }
 
-.sidebar {
+.panel-left {
   background: var(--bg-elevated);
   border-right: 1px solid var(--border);
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel-right {
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
   padding: 20px;
   overflow-y: auto;
   display: flex;

@@ -8,6 +8,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mi
 
 type Project = { id: string; hasPdf: boolean; mappings: string[] }
 
+export type FieldValue = { parsed?: string; custom?: string }
+
 export type Field = {
   id: string
   name: string
@@ -17,7 +19,7 @@ export type Field = {
   y: number
   w: number
   h: number
-  value?: string
+  value?: FieldValue
 }
 
 type NormalizedMapping = { fields: Field[] }
@@ -38,13 +40,22 @@ function normalizeMapping(raw: any): NormalizedMapping {
     const w = Number(it.w ?? it.width ?? it.rect?.w ?? it.rect?.width ?? it.bbox?.w ?? it.bbox?.width ?? 0)
     const h = Number(it.h ?? it.height ?? it.rect?.h ?? it.rect?.height ?? it.bbox?.h ?? it.bbox?.height ?? 0)
 
+    const rawVal = it.value
+    let value: FieldValue | undefined
+    if (rawVal != null) {
+      if (typeof rawVal === 'object' && !Array.isArray(rawVal)) {
+        value = { parsed: rawVal.parsed, custom: rawVal.custom }
+      } else {
+        value = { parsed: String(rawVal) }
+      }
+    }
     return {
       id: String(it.id ?? it.fieldId ?? it.key ?? uid(`f${idx}`)),
       name: String(it.name ?? it.fieldName ?? it.label ?? `field_${idx + 1}`),
       type: it.type ?? it.fieldType,
       page: Number.isFinite(page) ? page : 1,
       x, y, w, h,
-      value: it.value
+      value
     }
   })
 
@@ -56,13 +67,19 @@ function denormalizeMapping(mapping: NormalizedMapping) {
     schema: 'pdf-mapper-web:v1',
     fields: mapping.fields.map(f => {
       const { value, ...rest } = f
+      const hasValue = value && (value.parsed != null || value.custom != null)
       return {
         ...rest,
         type: f.type === 'numeric' || f.type === 'checkbox' ? f.type : 'text',
-        ...(value !== undefined ? { value } : {})
+        ...(hasValue ? { value: { parsed: value!.parsed, custom: value!.custom } } : {})
       }
     })
   }
+}
+
+function fieldDisplayValue(v: FieldValue | undefined): string {
+  if (!v) return ''
+  return (v.custom ?? v.parsed ?? '').trim()
 }
 
 async function extractTextFromField(
@@ -350,12 +367,14 @@ export default function App() {
     if (!pdf || !selectedField) return
     const id = selectedField.id
     extractTextFromField(pdf, selectedField, pdfRotation)
-      .then(value => {
+      .then(parsed => {
         setMapping(prev => {
           const f = prev.fields.find(ff => ff.id === id)
-          if (!f || f.value === value) return prev
+          if (!f || f.value?.parsed === parsed) return prev
           return {
-            fields: prev.fields.map(ff => (ff.id === id ? { ...ff, value } : ff))
+            fields: prev.fields.map(ff =>
+              ff.id === id ? { ...ff, value: { ...ff.value, parsed } } : ff
+            )
           }
         })
       })
@@ -486,15 +505,15 @@ export default function App() {
     if (!pdf || pageFields.length === 0) return
     setParsing(true)
     try {
-      const updates: { id: string; value: string }[] = []
+      const updates: { id: string; parsed: string }[] = []
       for (const f of pageFields) {
-        const value = await extractTextFromField(pdf, f, pdfRotation)
-        updates.push({ id: f.id, value })
+        const parsed = await extractTextFromField(pdf, f, pdfRotation)
+        updates.push({ id: f.id, parsed })
       }
       applyChange(prev => ({
         fields: prev.fields.map(ff => {
           const u = updates.find(x => x.id === ff.id)
-          return u ? { ...ff, value: u.value } : ff
+          return u ? { ...ff, value: { ...ff.value, parsed: u.parsed } } : ff
         })
       }))
     } catch (e) {
@@ -507,7 +526,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className="panel-left">
         <h1 className="logo">PDF Mapper</h1>
 
         <div className="section">
@@ -555,6 +574,10 @@ export default function App() {
               </option>
             ))}
           </select>
+          <div className="btn-row">
+            <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))} style={{ flex: 1 }}>Save</button>
+            <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
+          </div>
         </div>
 
         <div className="section">
@@ -596,101 +619,9 @@ export default function App() {
         <div className="btn-row">
           <button className="btn btn-ghost" onClick={undo} disabled={history.length === 0} title="Undo">Undo</button>
           <button className="btn btn-ghost" onClick={redo} disabled={redoStack.length === 0} title="Redo">Redo</button>
-          <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))}>Save</button>
-          <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
-          <button
-            className="btn btn-ghost"
-            onClick={parseTextInFields}
-            disabled={parsing || !pdf || pageFields.length === 0}
-            title="Extract text from selection boxes"
-          >
-            {parsing ? 'Parsing…' : 'Parse text'}
-          </button>
         </div>
 
         <p className="hint">Drag on empty canvas to add a new field</p>
-
-        <hr className="divider" />
-
-        <div className="section">
-          <span className="section-label">Fields on this page</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pageFields.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedId(f.id)}
-                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
-                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
-              >
-                <div className="field-card-name">{f.name}</div>
-                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
-                {f.value != null && f.value !== '' && (
-                  <div className="field-card-value" title={f.value}>
-                    {f.value.length > 30 ? `${f.value.slice(0, 30)}…` : f.value}
-                  </div>
-                )}
-              </button>
-            ))}
-            {!pageFields.length && <div className="hint">No fields on this page</div>}
-          </div>
-        </div>
-
-        {selectedField && (
-          <>
-            <hr className="divider" />
-            <div className="section">
-              <span className="section-label">Selected field</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className="form-group">
-                  <label>Name</label>
-                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Value (parsed)</label>
-                  <input
-                    className="input"
-                    value={selectedField.value ?? ''}
-                    onChange={e => updateSelected({ value: e.target.value })}
-                    placeholder="Parsed on select"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Type</label>
-                  <select
-                    className="select"
-                    value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
-                    onChange={e => updateSelected({ type: e.target.value })}
-                  >
-                    <option value="numeric">numeric</option>
-                    <option value="text">text</option>
-                    <option value="checkbox">checkbox</option>
-                  </select>
-                </div>
-                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
-                  Delete field
-                </button>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>x</label>
-                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>y</label>
-                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>w</label>
-                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>h</label>
-                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
       </aside>
 
       <div className="canvas-area">
@@ -820,6 +751,111 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <aside className="panel-right">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={parseTextInFields}
+          disabled={parsing || !pdf || pageFields.length === 0}
+          title="Extract text from selection boxes"
+          style={{ width: '100%' }}
+        >
+          {parsing ? 'Parsing…' : 'Parse text'}
+        </button>
+
+        <div className="section">
+          <span className="section-label">Fields on this page</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pageFields.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setSelectedId(f.id)}
+                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
+                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
+              >
+                <div className="field-card-name">{f.name}</div>
+                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
+                {(() => {
+                  const disp = fieldDisplayValue(f.value)
+                  return disp ? (
+                    <div className="field-card-value" title={disp}>
+                      {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+                    </div>
+                  ) : null
+                })()}
+              </button>
+            ))}
+            {!pageFields.length && <div className="hint">No fields on this page</div>}
+          </div>
+        </div>
+
+        {selectedField && (
+          <>
+            <hr className="divider" />
+            <div className="section">
+              <span className="section-label">Selected field</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group">
+                  <label>Name</label>
+                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Parsed</label>
+                  <input
+                    className="input"
+                    value={selectedField.value?.parsed ?? ''}
+                    readOnly
+                    placeholder="Extracted from PDF"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Custom</label>
+                  <input
+                    className="input"
+                    value={selectedField.value?.custom ?? ''}
+                    onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
+                    placeholder="Override or manual value"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Type</label>
+                  <select
+                    className="select"
+                    value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
+                    onChange={e => updateSelected({ type: e.target.value })}
+                  >
+                    <option value="numeric">numeric</option>
+                    <option value="text">text</option>
+                    <option value="checkbox">checkbox</option>
+                  </select>
+                </div>
+                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
+                  Delete field
+                </button>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>x</label>
+                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>y</label>
+                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>w</label>
+                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>h</label>
+                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </aside>
     </div>
   )
 }
