@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 5171
 
 app:
   dataDir: ${DATA_DIR:./data}

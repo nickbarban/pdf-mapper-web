@@ -20,8 +20,8 @@ docker compose up --build
 ```
 
 3) Відкрий:
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8080/api/projects`
+- Frontend: `http://localhost:5172`
+- Backend API: `http://localhost:5171/api/projects`
 
 ## Дані
 

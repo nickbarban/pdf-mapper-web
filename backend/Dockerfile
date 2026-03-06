@@ -7,5 +7,5 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 ENV JAVA_OPTS=""
 COPY --from=build /home/gradle/src/build/libs/*.jar /app/app.jar
-EXPOSE 8080
+EXPOSE 5171
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

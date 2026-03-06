@@ -6,7 +6,7 @@ services:
     volumes:
       - ./data:/data
     ports:
-      - "8080:8080"
+      - "5171:5171"
 
   frontend:
     build: ./frontend
@@ -16,4 +16,4 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "5172:5172"
