@@ -17,6 +17,7 @@ export type Field = {
   y: number
   w: number
   h: number
+  value?: string
 }
 
 type NormalizedMapping = { fields: Field[] }
@@ -42,7 +43,8 @@ function normalizeMapping(raw: any): NormalizedMapping {
       name: String(it.name ?? it.fieldName ?? it.label ?? `field_${idx + 1}`),
       type: it.type ?? it.fieldType,
       page: Number.isFinite(page) ? page : 1,
-      x, y, w, h
+      x, y, w, h,
+      value: it.value
     }
   })
 
@@ -52,11 +54,59 @@ function normalizeMapping(raw: any): NormalizedMapping {
 function denormalizeMapping(mapping: NormalizedMapping) {
   return {
     schema: 'pdf-mapper-web:v1',
-    fields: mapping.fields.map(f => ({
-      ...f,
-      type: f.type === 'numeric' || f.type === 'checkbox' ? f.type : 'text'
-    }))
+    fields: mapping.fields.map(f => {
+      const { value, ...rest } = f
+      return {
+        ...rest,
+        type: f.type === 'numeric' || f.type === 'checkbox' ? f.type : 'text',
+        ...(value !== undefined ? { value } : {})
+      }
+    })
   }
+}
+
+async function extractTextFromField(
+  pdfDoc: any,
+  field: Field,
+  rotation: PdfRotation
+): Promise<string> {
+  const page = await pdfDoc.getPage(field.page)
+  const viewport = page.getViewport({ scale: 1, rotation })
+  const textContent = await page.getTextContent()
+
+  const corners = [
+    [field.x, field.y],
+    [field.x + field.w, field.y],
+    [field.x, field.y + field.h],
+    [field.x + field.w, field.y + field.h]
+  ]
+  const pdfPoints = corners.map(([vx, vy]) => viewport.convertToPdfPoint(vx, vy))
+  const pdfXMin = Math.min(...pdfPoints.map(p => p[0]))
+  const pdfXMax = Math.max(...pdfPoints.map(p => p[0]))
+  const pdfYMin = Math.min(...pdfPoints.map(p => p[1]))
+  const pdfYMax = Math.max(...pdfPoints.map(p => p[1]))
+
+  const items: { str: string; x: number; y: number }[] = []
+  const eps = 0.5
+  for (const item of textContent.items as any[]) {
+    const tx = item.transform?.[4] ?? item.transform?.tx ?? 0
+    const ty = item.transform?.[5] ?? item.transform?.ty ?? 0
+    const tw = Math.abs(item.width ?? 0)
+    const th = Math.abs(item.height ?? 0)
+    const itemRight = tx + tw
+    const itemTop = ty + th
+    const strictlyInsideX = tx >= pdfXMin - eps && itemRight <= pdfXMax + eps
+    const strictlyInsideY = ty >= pdfYMin - eps && itemTop <= pdfYMax + eps
+    if (strictlyInsideX && strictlyInsideY) {
+      items.push({ str: item.str ?? '', x: tx, y: ty })
+    }
+  }
+  items.sort((a, b) => {
+    const dy = b.y - a.y
+    if (Math.abs(dy) > 3) return dy
+    return a.x - b.x
+  })
+  return items.map(i => i.str).join('').trim()
 }
 
 function strokeColorForType(type: string | undefined, isSelected: boolean): string {
@@ -173,6 +223,7 @@ export default function App() {
   const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [pdfRefreshKey, setPdfRefreshKey] = useState(0)
+  const [parsing, setParsing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedField = useMemo(
@@ -295,6 +346,22 @@ export default function App() {
     }
   }, [selectedId, pageFields])
 
+  useEffect(() => {
+    if (!pdf || !selectedField) return
+    const id = selectedField.id
+    extractTextFromField(pdf, selectedField, pdfRotation)
+      .then(value => {
+        setMapping(prev => {
+          const f = prev.fields.find(ff => ff.id === id)
+          if (!f || f.value === value) return prev
+          return {
+            fields: prev.fields.map(ff => (ff.id === id ? { ...ff, value } : ff))
+          }
+        })
+      })
+      .catch(() => {})
+  }, [pdf, selectedField, pdfRotation])
+
   async function save() {
     const body = denormalizeMapping(mapping)
     const res = await fetch(`/api/project/${encodeURIComponent(projectId)}/mapping?name=${encodeURIComponent(mappingName)}`, {
@@ -415,6 +482,29 @@ export default function App() {
     return { x, y, w, h }
   }
 
+  async function parseTextInFields() {
+    if (!pdf || pageFields.length === 0) return
+    setParsing(true)
+    try {
+      const updates: { id: string; value: string }[] = []
+      for (const f of pageFields) {
+        const value = await extractTextFromField(pdf, f, pdfRotation)
+        updates.push({ id: f.id, value })
+      }
+      applyChange(prev => ({
+        fields: prev.fields.map(ff => {
+          const u = updates.find(x => x.id === ff.id)
+          return u ? { ...ff, value: u.value } : ff
+        })
+      }))
+    } catch (e) {
+      console.error(e)
+      alert(e instanceof Error ? e.message : 'Failed to parse text')
+    } finally {
+      setParsing(false)
+    }
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', height: '100vh', fontFamily: 'ui-sans-serif, system-ui' }}>
       <div style={{ borderRight: '1px solid #ddd', padding: 12, overflow: 'auto' }}>
@@ -503,6 +593,13 @@ export default function App() {
           </button>
           <button onClick={() => save().then(() => alert('Saved'))}>Save</button>
           <button onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
+          <button
+            onClick={parseTextInFields}
+            disabled={parsing || !pdf || pageFields.length === 0}
+            title="Extract text from selection boxes into value field"
+          >
+            {parsing ? 'Parsing…' : 'Parse text'}
+          </button>
         </div>
 
         <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
@@ -531,6 +628,11 @@ export default function App() {
                 <div style={{ fontSize: 12, opacity: 0.7 }}>
                   x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}
                 </div>
+                {f.value != null && f.value !== '' && (
+                  <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }} title={f.value}>
+                    {f.value.length > 30 ? `${f.value.slice(0, 30)}…` : f.value}
+                  </div>
+                )}
               </button>
             ))}
             {!pageFields.length && <div style={{ opacity: 0.6, marginTop: 8 }}>No fields on this page</div>}
@@ -546,6 +648,15 @@ export default function App() {
                 <label>
                   Name
                   <input value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} style={{ width: '100%' }} />
+                </label>
+                <label>
+                  Value (parsed)
+                  <input
+                    value={selectedField.value ?? ''}
+                    onChange={e => updateSelected({ value: e.target.value })}
+                    style={{ width: '100%' }}
+                    placeholder="Click Parse text to extract"
+                  />
                 </label>
                 <label>
                   Type
