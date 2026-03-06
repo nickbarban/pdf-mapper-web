@@ -506,24 +506,24 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', height: '100vh', fontFamily: 'ui-sans-serif, system-ui' }}>
-      <div style={{ borderRight: '1px solid #ddd', padding: 12, overflow: 'auto' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-          <strong>PDF Mapper</strong>
-        </div>
+    <div className="app">
+      <aside className="sidebar">
+        <h1 className="logo">PDF Mapper</h1>
 
-        <label style={{ display: 'block', marginBottom: 6 }}>Project</label>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <select value={projectId} onChange={e => setProjectId(e.target.value)} style={{ flex: 1 }}>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.id}
-              </option>
-            ))}
-          </select>
-          <button type="button" onClick={createProject} title="New project">
-            +
-          </button>
+        <div className="section">
+          <span className="section-label">Project</span>
+          <div className="btn-row">
+            <select className="select" value={projectId} onChange={e => setProjectId(e.target.value)} style={{ flex: 1 }}>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.id}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-ghost btn-icon" onClick={createProject} title="New project">
+              +
+            </button>
+          </div>
         </div>
 
         <input
@@ -538,191 +538,163 @@ export default function App() {
         />
         <button
           type="button"
+          className="btn btn-primary"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading || !projectId}
-          style={{ width: '100%', marginBottom: 12 }}
+          style={{ width: '100%' }}
         >
           {uploading ? 'Uploading…' : 'Load PDF from file…'}
         </button>
 
-        <label style={{ display: 'block', marginBottom: 6 }}>Mapping</label>
-        <select value={mappingName} onChange={e => setMappingName(e.target.value)} style={{ width: '100%', marginBottom: 12 }}>
-          {(projects.find(p => p.id === projectId)?.mappings ?? []).map(m => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+        <div className="section">
+          <span className="section-label">Mapping</span>
+          <select className="select" value={mappingName} onChange={e => setMappingName(e.target.value)}>
+            {(projects.find(p => p.id === projectId)?.mappings ?? []).map(m => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}>
-            Prev
-          </button>
-          <div style={{ flex: 1, textAlign: 'center', paddingTop: 6 }}>
-            Page {pageNum} / {numPages}
+        <div className="section">
+          <span className="section-label">Page</span>
+          <div className="pager">
+            <button className="btn btn-ghost btn-icon" onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}>
+              ←
+            </button>
+            <span className="pager-value">{pageNum} / {numPages}</span>
+            <button className="btn btn-ghost btn-icon" onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}>
+              →
+            </button>
           </div>
-          <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}>
-            Next
-          </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.1) * 100) / 100))}>-</button>
-          <div style={{ flex: 1, textAlign: 'center', paddingTop: 6 }}>{Math.round(zoom * 100)}%</div>
-          <button onClick={() => setZoom(z => Math.min(4, Math.round((z + 0.1) * 100) / 100))}>+</button>
+        <div className="section">
+          <span className="section-label">Zoom</span>
+          <div className="pager">
+            <button className="btn btn-ghost btn-icon" onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.1) * 100) / 100))}>−</button>
+            <span className="pager-value">{Math.round(zoom * 100)}%</span>
+            <button className="btn btn-ghost btn-icon" onClick={() => setZoom(z => Math.min(4, Math.round((z + 0.1) * 100) / 100))}>+</button>
+          </div>
         </div>
 
-        <label style={{ display: 'block', marginBottom: 6 }}>PDF rotation</label>
-        <select
-          value={pdfRotation}
-          onChange={e => setPdfRotation(Number(e.target.value) as PdfRotation)}
-          style={{ width: '100%', marginBottom: 12 }}
-        >
-          <option value={0}>0°</option>
-          <option value={90}>90°</option>
-          <option value={180}>180°</option>
-          <option value={270}>270°</option>
-        </select>
+        <div className="section">
+          <span className="section-label">Rotation</span>
+          <select
+            className="select"
+            value={pdfRotation}
+            onChange={e => setPdfRotation(Number(e.target.value) as PdfRotation)}
+          >
+            <option value={0}>0°</option>
+            <option value={90}>90°</option>
+            <option value={180}>180°</option>
+            <option value={270}>270°</option>
+          </select>
+        </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <button onClick={undo} disabled={history.length === 0} title="Undo last action">
-            Undo
-          </button>
-          <button onClick={redo} disabled={redoStack.length === 0} title="Redo last undone action">
-            Redo
-          </button>
-          <button onClick={() => save().then(() => alert('Saved'))}>Save</button>
-          <button onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
+        <div className="btn-row">
+          <button className="btn btn-ghost" onClick={undo} disabled={history.length === 0} title="Undo">Undo</button>
+          <button className="btn btn-ghost" onClick={redo} disabled={redoStack.length === 0} title="Redo">Redo</button>
+          <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))}>Save</button>
+          <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
           <button
+            className="btn btn-ghost"
             onClick={parseTextInFields}
             disabled={parsing || !pdf || pageFields.length === 0}
-            title="Extract text from selection boxes into value field"
+            title="Extract text from selection boxes"
           >
             {parsing ? 'Parsing…' : 'Parse text'}
           </button>
         </div>
 
-        <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
-          Drag on empty canvas to add a new field
-        </p>
+        <p className="hint">Drag on empty canvas to add a new field</p>
 
-        <hr />
+        <hr className="divider" />
 
-        <div style={{ marginTop: 12 }}>
-          <strong>Fields on this page</strong>
-          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+        <div className="section">
+          <span className="section-label">Fields on this page</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {pageFields.map(f => (
               <button
                 key={f.id}
                 onClick={() => setSelectedId(f.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: '6px 8px',
-                  border: '1px solid #ddd',
-                  borderLeftWidth: 4,
-                  borderLeftColor: strokeColorForType(f.type, f.id === selectedId),
-                  background: f.id === selectedId ? '#f5f5f5' : 'white'
-                }}
+                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
+                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
               >
-                <div style={{ fontWeight: 600 }}>{f.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}
-                </div>
+                <div className="field-card-name">{f.name}</div>
+                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
                 {f.value != null && f.value !== '' && (
-                  <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }} title={f.value}>
+                  <div className="field-card-value" title={f.value}>
                     {f.value.length > 30 ? `${f.value.slice(0, 30)}…` : f.value}
                   </div>
                 )}
               </button>
             ))}
-            {!pageFields.length && <div style={{ opacity: 0.6, marginTop: 8 }}>No fields on this page</div>}
+            {!pageFields.length && <div className="hint">No fields on this page</div>}
           </div>
         </div>
 
         {selectedField && (
           <>
-            <hr />
-            <div style={{ marginTop: 12 }}>
-              <strong>Selected</strong>
-              <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                <label>
-                  Name
-                  <input value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} style={{ width: '100%' }} />
-                </label>
-                <label>
-                  Value (parsed)
+            <hr className="divider" />
+            <div className="section">
+              <span className="section-label">Selected field</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group">
+                  <label>Name</label>
+                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Value (parsed)</label>
                   <input
+                    className="input"
                     value={selectedField.value ?? ''}
                     onChange={e => updateSelected({ value: e.target.value })}
-                    style={{ width: '100%' }}
-                    placeholder="Click Parse text to extract"
+                    placeholder="Parsed on select"
                   />
-                </label>
-                <label>
-                  Type
+                </div>
+                <div className="form-group">
+                  <label>Type</label>
                   <select
+                    className="select"
                     value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
                     onChange={e => updateSelected({ type: e.target.value })}
-                    style={{ width: '100%' }}
                   >
                     <option value="numeric">numeric</option>
                     <option value="text">text</option>
                     <option value="checkbox">checkbox</option>
                   </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={deleteSelected}
-                  style={{ marginTop: 8, padding: '6px 12px', color: '#c00', border: '1px solid #c00' }}
-                >
+                </div>
+                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
                   Delete field
                 </button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                  <label>
-                    x
-                    <input
-                      type="number"
-                      value={selectedField.x}
-                      onChange={e => updateSelected({ x: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    y
-                    <input
-                      type="number"
-                      value={selectedField.y}
-                      onChange={e => updateSelected({ y: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    w
-                    <input
-                      type="number"
-                      value={selectedField.w}
-                      onChange={e => updateSelected({ w: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    h
-                    <input
-                      type="number"
-                      value={selectedField.h}
-                      onChange={e => updateSelected({ h: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>x</label>
+                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>y</label>
+                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>w</label>
+                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>h</label>
+                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                  </div>
                 </div>
               </div>
             </div>
           </>
         )}
-      </div>
+      </aside>
 
-      <div style={{ position: 'relative', overflow: 'auto', background: '#f0f0f0' }}>
-        <div style={{ position: 'relative', margin: 16, display: 'inline-block', background: 'white' }}>
+      <div className="canvas-area">
+        <div className="canvas-wrapper">
           <canvas ref={canvasRef} style={{ display: 'block' }} />
           <div style={{ position: 'absolute', inset: 0 }}>
             <Stage
@@ -779,7 +751,7 @@ export default function App() {
                       y={p.y}
                       width={p.w}
                       height={p.h}
-                      stroke="blue"
+                      stroke="#6366f1"
                       strokeWidth={2}
                       dash={[4, 4]}
                       listening={false}
