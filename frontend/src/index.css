@@ -1,23 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg: #0f1114;
-  --bg-elevated: #181b20;
-  --bg-elevated-2: #1e2228;
-  --border: rgba(255, 255, 255, 0.08);
+  --bg: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-elevated-2: #f1f5f9;
+  --border: #e2e8f0;
   --border-focus: rgba(99, 102, 241, 0.5);
-  --text: #e4e6eb;
-  --text-muted: #9ca3af;
-  --text-subtle: #6b7280;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
   --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --accent-muted: rgba(99, 102, 241, 0.15);
-  --danger: #ef4444;
-  --danger-hover: #f87171;
-  --success: #22c55e;
+  --accent-hover: #4f46e5;
+  --accent-muted: rgba(99, 102, 241, 0.1);
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --success: #16a34a;
   --radius: 8px;
   --radius-sm: 6px;
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 * {
@@ -148,11 +148,11 @@ body {
 .btn-danger {
   background: transparent;
   color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(220, 38, 38, 0.4);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(220, 38, 38, 0.08);
 }
 
 .btn-icon {
@@ -193,7 +193,7 @@ body {
 }
 
 .field-card:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: #e2e8f0;
 }
 
 .field-card.active {
@@ -231,7 +231,7 @@ body {
 .canvas-area {
   position: relative;
   overflow: auto;
-  background: #0a0c0e;
+  background: #e2e8f0;
   display: flex;
   align-items: flex-start;
   justify-content: center;
