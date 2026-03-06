@@ -1,0 +1,16 @@
+# Build outputs
+backend/build/
+backend/.gradle/
+frontend/dist/
+frontend/node_modules/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data - PDFs are large binaries, mappings are user-specific
+data/**/*.pdf

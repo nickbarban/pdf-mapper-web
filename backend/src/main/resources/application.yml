@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+app:
+  dataDir: ${DATA_DIR:./data}
+
+spring:
+  jackson:
+    serialization:
+      INDENT_OUTPUT: true
