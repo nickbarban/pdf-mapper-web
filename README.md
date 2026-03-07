@@ -37,6 +37,21 @@ docker compose up --build
 
 > MVP-нюанс: якщо ти завантажиш mapping у довільному старому форматі, фронтенд зробить best-effort normalize, а при Save збереже у форматі `v1`.
 
+## Production deploy (recommended)
+
+Single container, one port (backend serves frontend):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+# → http://localhost:8080
+```
+
+See [docs/DEPLOY-BEST-PRACTICES.md](docs/DEPLOY-BEST-PRACTICES.md) for options (single-artifact vs separate frontend/backend).
+
+## Deploy to AWS EC2 (free tier)
+
+CI/CD via GitHub Actions: push to `main` deploys to EC2 (production image, port 8080). See [docs/DEPLOY-EC2.md](docs/DEPLOY-EC2.md) for instance setup and GitHub secrets.
+
 ## API
 - `GET /api/projects`
 - `GET /api/project/{id}/pdf`

@@ -1,0 +1,15 @@
+# Production: single service, backend serves frontend on port 8080.
+# AWS deploy: GitHub Actions runs this on EC2 (see .github/workflows/deploy.yml or scripts/deploy-ec2.sh).
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"

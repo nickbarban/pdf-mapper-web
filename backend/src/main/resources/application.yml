@@ -3,6 +3,8 @@ server:
 
 app:
   dataDir: ${DATA_DIR:./data}
+  # Optional: comma-separated resource locations for frontend static files (e.g. file:/app/static/)
+  staticLocations: ${STATIC_LOCATIONS:classpath:/static/}
 
 spring:
   jackson:
