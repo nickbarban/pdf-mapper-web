@@ -40,6 +40,37 @@ body {
   height: 100vh;
 }
 
+.modal-selection {
+  position: absolute;
+  z-index: 100;
+  min-width: 260px;
+  max-width: 320px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-selection-header {
+  padding: 12px 14px;
+  background: var(--bg-elevated-2);
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-selection-body {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
 .panel-left {
   background: var(--bg-elevated);
   border-right: 1px solid var(--border);

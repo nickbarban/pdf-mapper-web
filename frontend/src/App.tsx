@@ -242,6 +242,8 @@ export default function App() {
   const [pdfRefreshKey, setPdfRefreshKey] = useState(0)
   const [parsing, setParsing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [modalPos, setModalPos] = useState({ x: 10, y: 10 })
+  const dragRef = useRef<{ startX: number; startY: number; clientX: number; clientY: number } | null>(null)
 
   const selectedField = useMemo(
     () => mapping.fields.find(f => f.id === selectedId) ?? null,
@@ -251,6 +253,35 @@ export default function App() {
   useEffect(() => {
     mappingRef.current = mapping
   }, [mapping])
+
+  useEffect(() => {
+    if (selectedField) setModalPos({ x: 10, y: 10 })
+  }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedField) return
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      const d = dragRef.current
+      setModalPos(p => ({
+        x: Math.max(0, p.x + e.clientX - d.clientX),
+        y: Math.max(0, p.y + e.clientY - d.clientY)
+      }))
+      dragRef.current = { ...d, clientX: e.clientX, clientY: e.clientY }
+    }
+    const onUp = () => { dragRef.current = null }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [selectedField])
+
+  function startDrag(e: React.MouseEvent) {
+    e.preventDefault()
+    dragRef.current = { startX: modalPos.x, startY: modalPos.y, clientX: e.clientX, clientY: e.clientY }
+  }
 
   const maxHistory = 50
 
@@ -625,6 +656,76 @@ export default function App() {
       </aside>
 
       <div className="canvas-area">
+        {selectedField && (
+          <div
+            className="modal-selection"
+            style={{ left: modalPos.x, top: modalPos.y }}
+          >
+            <div className="modal-selection-header" onMouseDown={startDrag}>
+              <span className="section-label">Selected field</span>
+              <button type="button" className="btn btn-ghost btn-icon" onMouseDown={e => e.stopPropagation()} onClick={() => setSelectedId(null)} title="Close">×</button>
+            </div>
+            <div className="modal-selection-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group">
+                  <label>Name</label>
+                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Parsed</label>
+                  <input
+                    className="input"
+                    value={selectedField.value?.parsed ?? ''}
+                    readOnly
+                    placeholder="Extracted from PDF"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Custom</label>
+                  <input
+                    className="input"
+                    value={selectedField.value?.custom ?? ''}
+                    onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
+                    placeholder="Override or manual value"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Type</label>
+                  <select
+                    className="select"
+                    value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
+                    onChange={e => updateSelected({ type: e.target.value })}
+                  >
+                    <option value="numeric">numeric</option>
+                    <option value="text">text</option>
+                    <option value="checkbox">checkbox</option>
+                  </select>
+                </div>
+                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
+                  Delete field
+                </button>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>x</label>
+                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>y</label>
+                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>w</label>
+                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>h</label>
+                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="canvas-wrapper">
           <canvas ref={canvasRef} style={{ display: 'block' }} />
           <div style={{ position: 'absolute', inset: 0 }}>
@@ -790,71 +891,6 @@ export default function App() {
           </div>
         </div>
 
-        {selectedField && (
-          <>
-            <hr className="divider" />
-            <div className="section">
-              <span className="section-label">Selected field</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className="form-group">
-                  <label>Name</label>
-                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Parsed</label>
-                  <input
-                    className="input"
-                    value={selectedField.value?.parsed ?? ''}
-                    readOnly
-                    placeholder="Extracted from PDF"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Custom</label>
-                  <input
-                    className="input"
-                    value={selectedField.value?.custom ?? ''}
-                    onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
-                    placeholder="Override or manual value"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Type</label>
-                  <select
-                    className="select"
-                    value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
-                    onChange={e => updateSelected({ type: e.target.value })}
-                  >
-                    <option value="numeric">numeric</option>
-                    <option value="text">text</option>
-                    <option value="checkbox">checkbox</option>
-                  </select>
-                </div>
-                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
-                  Delete field
-                </button>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>x</label>
-                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>y</label>
-                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>w</label>
-                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group">
-                    <label>h</label>
-                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
       </aside>
     </div>
   )
