@@ -1,0 +1,32 @@
+# Production: single image with backend serving frontend static build.
+# AWS deploy: not in this file — use GitHub Actions (.github/workflows/deploy.yml)
+# or run ./scripts/deploy-ec2.sh (rsync + ssh + docker on EC2).
+# Build: docker build -f Dockerfile.prod -t pdf-mapper-web .
+# Run:   docker run -p 8080:8080 -v ./data:/data -e DATA_DIR=/data pdf-mapper-web
+
+# ---- Frontend ----
+FROM node:20-alpine AS frontend
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# ---- Backend ----
+FROM gradle:8.10-jdk21 AS backend
+WORKDIR /home/gradle/src
+COPY backend/ .
+RUN gradle bootJar --no-daemon
+
+# ---- Runtime ----
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+ENV JAVA_OPTS=""
+ENV SERVER_PORT=8080
+ENV STATIC_LOCATIONS=file:/app/static/
+
+COPY --from=backend /home/gradle/src/build/libs/*.jar /app/app.jar
+COPY --from=frontend /app/dist /app/static
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=8080 -Dapp.staticLocations=file:/app/static/ -jar /app/app.jar"]

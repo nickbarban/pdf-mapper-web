@@ -12,8 +12,8 @@ class CorsConfig {
     override fun addCorsMappings(registry: CorsRegistry) {
       registry.addMapping("/api/**")
         .allowedOrigins(
-          "http://localhost:5173",
-          "http://127.0.0.1:5173"
+          "http://localhost:5172",
+          "http://127.0.0.1:5172"
         )
         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
         .allowedHeaders("*")

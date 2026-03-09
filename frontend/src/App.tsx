@@ -8,6 +8,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mi
 
 type Project = { id: string; hasPdf: boolean; mappings: string[] }
 
+export type FieldValue = { parsed?: string; custom?: string }
+
 export type Field = {
   id: string
   name: string
@@ -17,7 +19,7 @@ export type Field = {
   y: number
   w: number
   h: number
-  value?: string
+  value?: FieldValue
 }
 
 type NormalizedMapping = { fields: Field[] }
@@ -38,13 +40,22 @@ function normalizeMapping(raw: any): NormalizedMapping {
     const w = Number(it.w ?? it.width ?? it.rect?.w ?? it.rect?.width ?? it.bbox?.w ?? it.bbox?.width ?? 0)
     const h = Number(it.h ?? it.height ?? it.rect?.h ?? it.rect?.height ?? it.bbox?.h ?? it.bbox?.height ?? 0)
 
+    const rawVal = it.value
+    let value: FieldValue | undefined
+    if (rawVal != null) {
+      if (typeof rawVal === 'object' && !Array.isArray(rawVal)) {
+        value = { parsed: rawVal.parsed, custom: rawVal.custom }
+      } else {
+        value = { parsed: String(rawVal) }
+      }
+    }
     return {
       id: String(it.id ?? it.fieldId ?? it.key ?? uid(`f${idx}`)),
       name: String(it.name ?? it.fieldName ?? it.label ?? `field_${idx + 1}`),
       type: it.type ?? it.fieldType,
       page: Number.isFinite(page) ? page : 1,
       x, y, w, h,
-      value: it.value
+      value
     }
   })
 
@@ -56,13 +67,19 @@ function denormalizeMapping(mapping: NormalizedMapping) {
     schema: 'pdf-mapper-web:v1',
     fields: mapping.fields.map(f => {
       const { value, ...rest } = f
+      const hasValue = value && (value.parsed != null || value.custom != null)
       return {
         ...rest,
         type: f.type === 'numeric' || f.type === 'checkbox' ? f.type : 'text',
-        ...(value !== undefined ? { value } : {})
+        ...(hasValue ? { value: { parsed: value!.parsed, custom: value!.custom } } : {})
       }
     })
   }
+}
+
+function fieldDisplayValue(v: FieldValue | undefined): string {
+  if (!v) return ''
+  return (v.custom ?? v.parsed ?? '').trim()
 }
 
 async function extractTextFromField(
@@ -225,6 +242,8 @@ export default function App() {
   const [pdfRefreshKey, setPdfRefreshKey] = useState(0)
   const [parsing, setParsing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [modalPos, setModalPos] = useState({ x: 10, y: 10 })
+  const dragRef = useRef<{ startX: number; startY: number; clientX: number; clientY: number } | null>(null)
 
   const selectedField = useMemo(
     () => mapping.fields.find(f => f.id === selectedId) ?? null,
@@ -234,6 +253,35 @@ export default function App() {
   useEffect(() => {
     mappingRef.current = mapping
   }, [mapping])
+
+  useEffect(() => {
+    if (selectedField) setModalPos({ x: 10, y: 10 })
+  }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedField) return
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      const d = dragRef.current
+      setModalPos(p => ({
+        x: Math.max(0, p.x + e.clientX - d.clientX),
+        y: Math.max(0, p.y + e.clientY - d.clientY)
+      }))
+      dragRef.current = { ...d, clientX: e.clientX, clientY: e.clientY }
+    }
+    const onUp = () => { dragRef.current = null }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [selectedField])
+
+  function startDrag(e: React.MouseEvent) {
+    e.preventDefault()
+    dragRef.current = { startX: modalPos.x, startY: modalPos.y, clientX: e.clientX, clientY: e.clientY }
+  }
 
   const maxHistory = 50
 
@@ -350,12 +398,14 @@ export default function App() {
     if (!pdf || !selectedField) return
     const id = selectedField.id
     extractTextFromField(pdf, selectedField, pdfRotation)
-      .then(value => {
+      .then(parsed => {
         setMapping(prev => {
           const f = prev.fields.find(ff => ff.id === id)
-          if (!f || f.value === value) return prev
+          if (!f || f.value?.parsed === parsed) return prev
           return {
-            fields: prev.fields.map(ff => (ff.id === id ? { ...ff, value } : ff))
+            fields: prev.fields.map(ff =>
+              ff.id === id ? { ...ff, value: { ...ff.value, parsed } } : ff
+            )
           }
         })
       })
@@ -486,15 +536,15 @@ export default function App() {
     if (!pdf || pageFields.length === 0) return
     setParsing(true)
     try {
-      const updates: { id: string; value: string }[] = []
+      const updates: { id: string; parsed: string }[] = []
       for (const f of pageFields) {
-        const value = await extractTextFromField(pdf, f, pdfRotation)
-        updates.push({ id: f.id, value })
+        const parsed = await extractTextFromField(pdf, f, pdfRotation)
+        updates.push({ id: f.id, parsed })
       }
       applyChange(prev => ({
         fields: prev.fields.map(ff => {
           const u = updates.find(x => x.id === ff.id)
-          return u ? { ...ff, value: u.value } : ff
+          return u ? { ...ff, value: { ...ff.value, parsed: u.parsed } } : ff
         })
       }))
     } catch (e) {
@@ -506,24 +556,24 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', height: '100vh', fontFamily: 'ui-sans-serif, system-ui' }}>
-      <div style={{ borderRight: '1px solid #ddd', padding: 12, overflow: 'auto' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-          <strong>PDF Mapper</strong>
-        </div>
+    <div className="app">
+      <aside className="panel-left">
+        <h1 className="logo">PDF Mapper</h1>
 
-        <label style={{ display: 'block', marginBottom: 6 }}>Project</label>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <select value={projectId} onChange={e => setProjectId(e.target.value)} style={{ flex: 1 }}>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.id}
-              </option>
-            ))}
-          </select>
-          <button type="button" onClick={createProject} title="New project">
-            +
-          </button>
+        <div className="section">
+          <span className="section-label">Project</span>
+          <div className="btn-row">
+            <select className="select" value={projectId} onChange={e => setProjectId(e.target.value)} style={{ flex: 1 }}>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.id}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-ghost btn-icon" onClick={createProject} title="New project">
+              +
+            </button>
+          </div>
         </div>
 
         <input
@@ -538,191 +588,145 @@ export default function App() {
         />
         <button
           type="button"
+          className="btn btn-primary"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading || !projectId}
-          style={{ width: '100%', marginBottom: 12 }}
+          style={{ width: '100%' }}
         >
           {uploading ? 'Uploading…' : 'Load PDF from file…'}
         </button>
 
-        <label style={{ display: 'block', marginBottom: 6 }}>Mapping</label>
-        <select value={mappingName} onChange={e => setMappingName(e.target.value)} style={{ width: '100%', marginBottom: 12 }}>
-          {(projects.find(p => p.id === projectId)?.mappings ?? []).map(m => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}>
-            Prev
-          </button>
-          <div style={{ flex: 1, textAlign: 'center', paddingTop: 6 }}>
-            Page {pageNum} / {numPages}
-          </div>
-          <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}>
-            Next
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.1) * 100) / 100))}>-</button>
-          <div style={{ flex: 1, textAlign: 'center', paddingTop: 6 }}>{Math.round(zoom * 100)}%</div>
-          <button onClick={() => setZoom(z => Math.min(4, Math.round((z + 0.1) * 100) / 100))}>+</button>
-        </div>
-
-        <label style={{ display: 'block', marginBottom: 6 }}>PDF rotation</label>
-        <select
-          value={pdfRotation}
-          onChange={e => setPdfRotation(Number(e.target.value) as PdfRotation)}
-          style={{ width: '100%', marginBottom: 12 }}
-        >
-          <option value={0}>0°</option>
-          <option value={90}>90°</option>
-          <option value={180}>180°</option>
-          <option value={270}>270°</option>
-        </select>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <button onClick={undo} disabled={history.length === 0} title="Undo last action">
-            Undo
-          </button>
-          <button onClick={redo} disabled={redoStack.length === 0} title="Redo last undone action">
-            Redo
-          </button>
-          <button onClick={() => save().then(() => alert('Saved'))}>Save</button>
-          <button onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
-          <button
-            onClick={parseTextInFields}
-            disabled={parsing || !pdf || pageFields.length === 0}
-            title="Extract text from selection boxes into value field"
-          >
-            {parsing ? 'Parsing…' : 'Parse text'}
-          </button>
-        </div>
-
-        <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
-          Drag on empty canvas to add a new field
-        </p>
-
-        <hr />
-
-        <div style={{ marginTop: 12 }}>
-          <strong>Fields on this page</strong>
-          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-            {pageFields.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedId(f.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: '6px 8px',
-                  border: '1px solid #ddd',
-                  borderLeftWidth: 4,
-                  borderLeftColor: strokeColorForType(f.type, f.id === selectedId),
-                  background: f.id === selectedId ? '#f5f5f5' : 'white'
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>{f.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}
-                </div>
-                {f.value != null && f.value !== '' && (
-                  <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }} title={f.value}>
-                    {f.value.length > 30 ? `${f.value.slice(0, 30)}…` : f.value}
-                  </div>
-                )}
-              </button>
+        <div className="section">
+          <span className="section-label">Mapping</span>
+          <select className="select" value={mappingName} onChange={e => setMappingName(e.target.value)}>
+            {(projects.find(p => p.id === projectId)?.mappings ?? []).map(m => (
+              <option key={m} value={m}>
+                {m}
+              </option>
             ))}
-            {!pageFields.length && <div style={{ opacity: 0.6, marginTop: 8 }}>No fields on this page</div>}
+          </select>
+          <div className="btn-row">
+            <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))} style={{ flex: 1 }}>Save</button>
+            <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
           </div>
         </div>
 
+        <div className="section">
+          <span className="section-label">Page</span>
+          <div className="pager">
+            <button className="btn btn-ghost btn-icon" onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}>
+              ←
+            </button>
+            <span className="pager-value">{pageNum} / {numPages}</span>
+            <button className="btn btn-ghost btn-icon" onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}>
+              →
+            </button>
+          </div>
+        </div>
+
+        <div className="section">
+          <span className="section-label">Zoom</span>
+          <div className="pager">
+            <button className="btn btn-ghost btn-icon" onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.1) * 100) / 100))}>−</button>
+            <span className="pager-value">{Math.round(zoom * 100)}%</span>
+            <button className="btn btn-ghost btn-icon" onClick={() => setZoom(z => Math.min(4, Math.round((z + 0.1) * 100) / 100))}>+</button>
+          </div>
+        </div>
+
+        <div className="section">
+          <span className="section-label">Rotation</span>
+          <select
+            className="select"
+            value={pdfRotation}
+            onChange={e => setPdfRotation(Number(e.target.value) as PdfRotation)}
+          >
+            <option value={0}>0°</option>
+            <option value={90}>90°</option>
+            <option value={180}>180°</option>
+            <option value={270}>270°</option>
+          </select>
+        </div>
+
+        <div className="btn-row">
+          <button className="btn btn-ghost" onClick={undo} disabled={history.length === 0} title="Undo">Undo</button>
+          <button className="btn btn-ghost" onClick={redo} disabled={redoStack.length === 0} title="Redo">Redo</button>
+        </div>
+
+        <p className="hint">Drag on empty canvas to add a new field</p>
+      </aside>
+
+      <div className="canvas-area">
         {selectedField && (
-          <>
-            <hr />
-            <div style={{ marginTop: 12 }}>
-              <strong>Selected</strong>
-              <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                <label>
-                  Name
-                  <input value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} style={{ width: '100%' }} />
-                </label>
-                <label>
-                  Value (parsed)
+          <div
+            className="modal-selection"
+            style={{ left: modalPos.x, top: modalPos.y }}
+          >
+            <div className="modal-selection-header" onMouseDown={startDrag}>
+              <span className="section-label">Selected field</span>
+              <button type="button" className="btn btn-ghost btn-icon" onMouseDown={e => e.stopPropagation()} onClick={() => setSelectedId(null)} title="Close">×</button>
+            </div>
+            <div className="modal-selection-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group">
+                  <label>Name</label>
+                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Parsed</label>
                   <input
-                    value={selectedField.value ?? ''}
-                    onChange={e => updateSelected({ value: e.target.value })}
-                    style={{ width: '100%' }}
-                    placeholder="Click Parse text to extract"
+                    className="input"
+                    value={selectedField.value?.parsed ?? ''}
+                    readOnly
+                    placeholder="Extracted from PDF"
                   />
-                </label>
-                <label>
-                  Type
+                </div>
+                <div className="form-group">
+                  <label>Custom</label>
+                  <input
+                    className="input"
+                    value={selectedField.value?.custom ?? ''}
+                    onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
+                    placeholder="Override or manual value"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Type</label>
                   <select
+                    className="select"
                     value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
                     onChange={e => updateSelected({ type: e.target.value })}
-                    style={{ width: '100%' }}
                   >
                     <option value="numeric">numeric</option>
                     <option value="text">text</option>
                     <option value="checkbox">checkbox</option>
                   </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={deleteSelected}
-                  style={{ marginTop: 8, padding: '6px 12px', color: '#c00', border: '1px solid #c00' }}
-                >
+                </div>
+                <button type="button" className="btn btn-danger" onClick={deleteSelected}>
                   Delete field
                 </button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                  <label>
-                    x
-                    <input
-                      type="number"
-                      value={selectedField.x}
-                      onChange={e => updateSelected({ x: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    y
-                    <input
-                      type="number"
-                      value={selectedField.y}
-                      onChange={e => updateSelected({ y: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    w
-                    <input
-                      type="number"
-                      value={selectedField.w}
-                      onChange={e => updateSelected({ w: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                  <label>
-                    h
-                    <input
-                      type="number"
-                      value={selectedField.h}
-                      onChange={e => updateSelected({ h: Number(e.target.value) })}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>x</label>
+                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>y</label>
+                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>w</label>
+                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label>h</label>
+                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                  </div>
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
-      </div>
-
-      <div style={{ position: 'relative', overflow: 'auto', background: '#f0f0f0' }}>
-        <div style={{ position: 'relative', margin: 16, display: 'inline-block', background: 'white' }}>
+        <div className="canvas-wrapper">
           <canvas ref={canvasRef} style={{ display: 'block' }} />
           <div style={{ position: 'absolute', inset: 0 }}>
             <Stage
@@ -779,7 +783,7 @@ export default function App() {
                       y={p.y}
                       width={p.w}
                       height={p.h}
-                      stroke="blue"
+                      stroke="#6366f1"
                       strokeWidth={2}
                       dash={[4, 4]}
                       listening={false}
@@ -848,6 +852,46 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <aside className="panel-right">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={parseTextInFields}
+          disabled={parsing || !pdf || pageFields.length === 0}
+          title="Extract text from selection boxes"
+          style={{ width: '100%' }}
+        >
+          {parsing ? 'Parsing…' : 'Parse text'}
+        </button>
+
+        <div className="section">
+          <span className="section-label">Fields on this page</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pageFields.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setSelectedId(f.id)}
+                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
+                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
+              >
+                <div className="field-card-name">{f.name}</div>
+                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
+                {(() => {
+                  const disp = fieldDisplayValue(f.value)
+                  return disp ? (
+                    <div className="field-card-value" title={disp}>
+                      {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+                    </div>
+                  ) : null
+                })()}
+              </button>
+            ))}
+            {!pageFields.length && <div className="hint">No fields on this page</div>}
+          </div>
+        </div>
+
+      </aside>
     </div>
   )
 }
