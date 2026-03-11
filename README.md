@@ -11,7 +11,7 @@ Web-версія твого Swing viewer:
 
 1) Поклади PDF у:
 
-`./data/project1/source.pdf`
+`./data/projects/project1/source.pdf`
 
 2) Запуск:
 
@@ -25,9 +25,11 @@ docker compose up --build
 
 ## Дані
 
-Кожен проєкт = папка у `./data/<projectId>/`:
+Кожен проєкт = папка у `./data/projects/<projectId>/`:
 - `source.pdf`
 - `mappings/*.json`
+
+Якщо у тебе вже є проєкти в `./data/<projectId>/`, перенеси їх: `mkdir -p data/projects && mv data/project1 data/projects/` (і аналогічно для інших).
 
 При збереженні через UI mapping записується у стабільний формат:
 

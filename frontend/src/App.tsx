@@ -225,6 +225,7 @@ export default function App() {
 
   const [pdf, setPdf] = useState<any>(null)
   const [pdfName, setPdfName] = useState<string | null>(null)
+  const [lastParseJson, setLastParseJson] = useState<string | null>(null)
   const [collapsedTypes, setCollapsedTypes] = useState<{ text: boolean; numeric: boolean; checkbox: boolean }>({
     text: true,
     numeric: true,
@@ -579,6 +580,34 @@ export default function App() {
           return u ? { ...ff, value: { ...ff.value, parsed: u.parsed } } : ff
         })
       }))
+
+      const payload = {
+        pages: [
+          {
+            pageNumber: pageNum,
+            textFields: pageFields.map(f => {
+              const u = updates.find(x => x.id === f.id)
+              const parsedValue = u?.parsed ?? f.value?.parsed ?? ''
+              const customValue = f.value?.custom ?? ''
+              return {
+                name: f.name,
+                rect: { x: f.x, y: f.y, w: f.w, h: f.h },
+                parsedValue,
+                customValue
+              }
+            })
+          }
+        ]
+      }
+
+      const json = JSON.stringify(payload, null, 2)
+      setLastParseJson(json)
+      console.log('Parse text result:', payload)
+      try {
+        await navigator.clipboard.writeText(json)
+      } catch {
+        // ignore clipboard errors (e.g. permissions)
+      }
     } catch (e) {
       console.error(e)
       alert(e instanceof Error ? e.message : 'Failed to parse text')
@@ -650,6 +679,17 @@ export default function App() {
           <div className="btn-row">
             <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))} style={{ flex: 1 }}>Save</button>
             <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                if (!projectId || !mappingName) return
+                const url = `/result?project=${encodeURIComponent(projectId)}&mapping=${encodeURIComponent(mappingName)}`
+                window.open(url, '_blank', 'noopener,noreferrer')
+              }}
+            >
+              See result
+            </button>
           </div>
         </div>
 
@@ -896,16 +936,55 @@ export default function App() {
       </div>
 
       <aside className="panel-right">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={parseTextInFields}
-          disabled={parsing || !pdf || pageFields.length === 0}
-          title="Extract text from selection boxes"
-          style={{ width: '100%' }}
-        >
-          {parsing ? 'Parsing…' : 'Parse text'}
-        </button>
+        <div className="section">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={parseTextInFields}
+            disabled={parsing || !pdf || pageFields.length === 0}
+            title="Extract text from selection boxes"
+            style={{ width: '100%' }}
+          >
+            {parsing ? 'Parsing…' : 'Parse text'}
+          </button>
+          {lastParseJson && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span className="section-label">Last parse JSON</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  title="Copy JSON to clipboard"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(lastParseJson)
+                    } catch (e) {
+                      console.error(e)
+                    }
+                  }}
+                >
+                  ⧉
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={lastParseJson}
+                style={{
+                  width: '100%',
+                  minHeight: 120,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace',
+                  fontSize: 11,
+                  padding: 8,
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  resize: 'vertical',
+                  background: 'var(--bg-elevated-2)',
+                  color: 'var(--text)'
+                }}
+              />
+            </div>
+          )}
+        </div>
 
         <div className="section">
           <span className="section-label">Fields on this page</span>
