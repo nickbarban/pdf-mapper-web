@@ -41,7 +41,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 mkdir -p /home/ec2-user/pdf-mapper-web
 mkdir -p /home/ec2-user/pdf-mapper-web/data
 # Optional: add a test project and PDF
-# mkdir -p /home/ec2-user/pdf-mapper-web/data/project1
+# mkdir -p /home/ec2-user/pdf-mapper-web/data/projects/project1
 ```
 
 ## 4. GitHub repository secrets

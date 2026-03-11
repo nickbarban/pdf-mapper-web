@@ -245,6 +245,9 @@ body {
 .field-card-name {
   font-weight: 600;
   font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .field-card-meta {
@@ -307,5 +310,54 @@ body {
 .form-group label {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.field-tree-root {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-2);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.field-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.field-tree-header:hover {
+  background: #e2e8f0;
+}
+
+.field-tree-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field-tree-chevron {
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+
+.field-tree-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-tree-count {
+  font-size: 11px;
+  color: var(--text-subtle);
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.field-tree-body {
+  padding: 4px 8px 8px 12px;
 }
 

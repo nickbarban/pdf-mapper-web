@@ -2,12 +2,16 @@ package com.nick.pdfmapper.api
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.PDPageContentStream
+import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -19,7 +23,8 @@ class ProjectController(
   @Value("\${app.dataDir}") private val dataDir: String,
   private val mapper: ObjectMapper,
 ) {
-  private fun projectDir(projectId: String): Path = Path.of(dataDir).resolve(projectId)
+  private fun projectsRoot(): Path = Path.of(dataDir).resolve("projects")
+  private fun projectDir(projectId: String): Path = projectsRoot().resolve(projectId)
   private fun mappingsDir(projectId: String): Path = projectDir(projectId).resolve("mappings")
 
   data class ProjectDto(
@@ -35,10 +40,17 @@ class ProjectController(
     val savedAt: String,
   )
 
+  data class RenderRequest(
+    val projectId: String,
+    val templateName: String,
+    val mappingName: String,
+  )
+
   @PostMapping("/projects")
   fun createProject(@RequestBody body: Map<String, String>): ProjectDto {
     val id = body["id"] ?: throw IllegalArgumentException("Missing project id")
     require(id.matches(Regex("^[a-zA-Z0-9_-]+$"))) { "Invalid project id: $id" }
+    Files.createDirectories(projectsRoot())
     val dir = projectDir(id)
     Files.createDirectories(dir)
     return ProjectDto(id = id, hasPdf = false, mappings = emptyList())
@@ -62,9 +74,20 @@ class ProjectController(
     )
   }
 
+  @GetMapping("/templates")
+  fun listTemplates(): List<String> {
+    val templatesDir = Path.of(dataDir).resolve("templates")
+    if (!Files.exists(templatesDir)) return emptyList()
+    return Files.list(templatesDir)
+      .filter { it.fileName.toString().endsWith(".pdf") }
+      .map { it.fileName.toString().removeSuffix(".pdf") }
+      .sorted()
+      .toList()
+  }
+
   @GetMapping("/projects")
   fun listProjects(): List<ProjectDto> {
-    val root = Path.of(dataDir)
+    val root = projectsRoot()
     if (!Files.exists(root)) return emptyList()
 
     return Files.list(root)
@@ -156,5 +179,90 @@ class ProjectController(
       bytesWritten = Files.size(dst),
       savedAt = Instant.now().toString(),
     )
+  }
+
+  @PostMapping("/render", produces = [MediaType.APPLICATION_PDF_VALUE])
+  fun renderPdf(@RequestBody req: RenderRequest): ResponseEntity<ByteArray> {
+    val root = Path.of(dataDir)
+    val templatePath = root.resolve("templates").resolve("${req.templateName}.pdf")
+    val mappingPath = mappingsDir(req.projectId).resolve("${req.mappingName}.json")
+
+    require(Files.exists(templatePath)) { "Template not found: $templatePath" }
+    require(Files.exists(mappingPath)) { "Mapping not found: $mappingPath" }
+
+    val mappingNode = mapper.readTree(Files.readString(mappingPath))
+    val fieldsNode: JsonNode = when {
+      mappingNode.isArray -> mappingNode
+      mappingNode.has("fields") -> mappingNode["fields"]
+      else -> mapper.createArrayNode()
+    }
+
+    val doc = PDDocument.load(Files.newInputStream(templatePath))
+    try {
+      // group fields by page number (1-based)
+      val byPage: Map<Int, List<JsonNode>> = fieldsNode.mapNotNull { field ->
+        if (!field.isObject) return@mapNotNull null
+        val page = field.get("page")?.asInt(1) ?: 1
+        page to field
+      }.groupBy({ it.first }, { it.second })
+
+      for ((pageNum, pageFields) in byPage) {
+        if (pageNum < 1 || pageNum > doc.numberOfPages) continue
+        val page = doc.getPage(pageNum - 1)
+        val mediaBox = page.mediaBox
+        val pageHeight = mediaBox.height
+
+        val font = PDType1Font.HELVETICA
+        val fontSize = 9f
+        PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
+          cs.setFont(font, fontSize)
+
+          for (field in pageFields) {
+            val name = field.get("name")?.asText()
+            val fieldType = field.get("type")?.asText()
+            if (name == "companyType") continue
+            if (fieldType == "checkbox") continue
+
+            val valueNode = field.get("value")
+            val custom = valueNode?.get("custom")?.asText(null)
+            val parsed = valueNode?.get("parsed")?.asText(null)
+            val text = (custom?.takeIf { it.isNotBlank() } ?: parsed)?.trim()
+            if (text.isNullOrEmpty()) continue
+
+            val x = field.get("x")?.asDouble() ?: 0.0
+            val y = field.get("y")?.asDouble() ?: 0.0
+            val w = field.get("w")?.asDouble() ?: 0.0
+            val h = field.get("h")?.asDouble() ?: 0.0
+
+            val pdfX = x.toFloat()
+            val pdfY = (pageHeight - (y + h)).toFloat()
+            val rectCenterX = pdfX + (w / 2).toFloat()
+            val rectCenterY = pdfY + (h / 2).toFloat()
+
+            val textWidth = (font.getStringWidth(text) / 1000f) * fontSize
+            val rightBound = (pdfX + w.toFloat() - textWidth).coerceAtLeast(pdfX)
+            val startX = (rectCenterX - textWidth / 2f).coerceIn(pdfX, rightBound)
+            val baselineY = rectCenterY - fontSize * 0.35f
+
+            cs.beginText()
+            cs.newLineAtOffset(startX, baselineY)
+            cs.showText(text)
+            cs.endText()
+          }
+        }
+      }
+
+      val baos = ByteArrayOutputStream()
+      doc.save(baos)
+      val bytes = baos.toByteArray()
+
+    return ResponseEntity.ok()
+      .header(HttpHeaders.CACHE_CONTROL, "no-store")
+      .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"${req.templateName}-rendered.pdf\"")
+      .contentType(MediaType.APPLICATION_PDF)
+      .body(bytes)
+    } finally {
+      doc.close()
+    }
   }
 }

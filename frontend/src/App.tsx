@@ -224,6 +224,13 @@ export default function App() {
   const [mappingName, setMappingName] = useState<string>('runA')
 
   const [pdf, setPdf] = useState<any>(null)
+  const [pdfName, setPdfName] = useState<string | null>(null)
+  const [lastParseJson, setLastParseJson] = useState<string | null>(null)
+  const [collapsedTypes, setCollapsedTypes] = useState<{ text: boolean; numeric: boolean; checkbox: boolean }>({
+    text: true,
+    numeric: true,
+    checkbox: true
+  })
   const [pageNum, setPageNum] = useState<number>(1)
   const [numPages, setNumPages] = useState<number>(1)
   const [zoom, setZoom] = useState<number>(1.25)
@@ -317,6 +324,10 @@ export default function App() {
         if (!list.find(p => p.id === projectId) && list.length) {
           setProjectId(list[0].id)
         }
+        const proj = list.find(p => p.id === projectId)
+        if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
+          setMappingName(proj.mappings[0])
+        }
         return list
       })
       .catch(() => setProjects([]))
@@ -326,6 +337,18 @@ export default function App() {
     refreshProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    // reset displayed PDF name when switching project
+    setPdfName(null)
+  }, [projectId])
+
+  useEffect(() => {
+    const proj = projects.find(p => p.id === projectId)
+    if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
+      setMappingName(proj.mappings[0])
+    }
+  }, [projectId, projects])
 
   useEffect(() => {
     if (!projectId) return
@@ -381,6 +404,15 @@ export default function App() {
   }, [pdf, pageNum, zoom, pdfRotation])
 
   const pageFields = useMemo(() => mapping.fields.filter(f => f.page === pageNum), [mapping.fields, pageNum])
+
+  const groupedPageFields = useMemo(
+    () => ({
+      text: pageFields.filter(f => (f.type === 'numeric' || f.type === 'checkbox') ? false : true),
+      numeric: pageFields.filter(f => f.type === 'numeric'),
+      checkbox: pageFields.filter(f => f.type === 'checkbox')
+    }),
+    [pageFields]
+  )
 
   const stageSize = useMemo(
     () => ({ width: canvasSize.width, height: canvasSize.height }),
@@ -489,6 +521,7 @@ export default function App() {
       await refreshProjects()
       setPdf(null)
       setPdfRefreshKey(k => k + 1)
+      setPdfName(file.name || null)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to upload PDF')
     } finally {
@@ -547,6 +580,34 @@ export default function App() {
           return u ? { ...ff, value: { ...ff.value, parsed: u.parsed } } : ff
         })
       }))
+
+      const payload = {
+        pages: [
+          {
+            pageNumber: pageNum,
+            textFields: pageFields.map(f => {
+              const u = updates.find(x => x.id === f.id)
+              const parsedValue = u?.parsed ?? f.value?.parsed ?? ''
+              const customValue = f.value?.custom ?? ''
+              return {
+                name: f.name,
+                rect: { x: f.x, y: f.y, w: f.w, h: f.h },
+                parsedValue,
+                customValue
+              }
+            })
+          }
+        ]
+      }
+
+      const json = JSON.stringify(payload, null, 2)
+      setLastParseJson(json)
+      console.log('Parse text result:', payload)
+      try {
+        await navigator.clipboard.writeText(json)
+      } catch {
+        // ignore clipboard errors (e.g. permissions)
+      }
     } catch (e) {
       console.error(e)
       alert(e instanceof Error ? e.message : 'Failed to parse text')
@@ -573,6 +634,16 @@ export default function App() {
             <button type="button" className="btn btn-ghost btn-icon" onClick={createProject} title="New project">
               +
             </button>
+          </div>
+          <div className="form-group">
+            <label>Active PDF file</label>
+            <input
+              className="input"
+              type="text"
+              value={projectId ? (pdfName ?? 'source.pdf') : ''}
+              readOnly
+              disabled
+            />
           </div>
         </div>
 
@@ -608,6 +679,17 @@ export default function App() {
           <div className="btn-row">
             <button className="btn btn-primary" onClick={() => save().then(() => alert('Saved'))} style={{ flex: 1 }}>Save</button>
             <button className="btn btn-ghost" onClick={() => saveAs().then(() => alert('Saved as'))}>Save as…</button>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                if (!projectId || !mappingName) return
+                const url = `/result?project=${encodeURIComponent(projectId)}&mapping=${encodeURIComponent(mappingName)}`
+                window.open(url, '_blank', 'noopener,noreferrer')
+              }}
+            >
+              See result
+            </button>
           </div>
         </div>
 
@@ -854,39 +936,112 @@ export default function App() {
       </div>
 
       <aside className="panel-right">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={parseTextInFields}
-          disabled={parsing || !pdf || pageFields.length === 0}
-          title="Extract text from selection boxes"
-          style={{ width: '100%' }}
-        >
-          {parsing ? 'Parsing…' : 'Parse text'}
-        </button>
+        <div className="section">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={parseTextInFields}
+            disabled={parsing || !pdf || pageFields.length === 0}
+            title="Extract text from selection boxes"
+            style={{ width: '100%' }}
+          >
+            {parsing ? 'Parsing…' : 'Parse text'}
+          </button>
+          {lastParseJson && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span className="section-label">Last parse JSON</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  title="Copy JSON to clipboard"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(lastParseJson)
+                    } catch (e) {
+                      console.error(e)
+                    }
+                  }}
+                >
+                  ⧉
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={lastParseJson}
+                style={{
+                  width: '100%',
+                  minHeight: 120,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace',
+                  fontSize: 11,
+                  padding: 8,
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  resize: 'vertical',
+                  background: 'var(--bg-elevated-2)',
+                  color: 'var(--text)'
+                }}
+              />
+            </div>
+          )}
+        </div>
 
         <div className="section">
           <span className="section-label">Fields on this page</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pageFields.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedId(f.id)}
-                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
-                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
-              >
-                <div className="field-card-name">{f.name}</div>
-                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
-                {(() => {
-                  const disp = fieldDisplayValue(f.value)
-                  return disp ? (
-                    <div className="field-card-value" title={disp}>
-                      {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+            {(['text', 'numeric', 'checkbox'] as const).map(type => {
+              const list = groupedPageFields[type]
+              const isCollapsed = collapsedTypes[type]
+              if (!list.length) return null
+              const label = type === 'text' ? 'Text' : type === 'numeric' ? 'Numeric' : 'Checkbox'
+              return (
+                <div key={type} className="field-tree-root">
+                  <div
+                    className="field-tree-header"
+                    onClick={() =>
+                      setCollapsedTypes(prev => ({
+                        ...prev,
+                        [type]: !prev[type]
+                      }))
+                    }
+                  >
+                    <div className="field-tree-header-left">
+                      <span className="field-tree-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                      <span className="field-tree-label">{label}</span>
                     </div>
-                  ) : null
-                })()}
-              </button>
-            ))}
+                    <span className="field-tree-count">{list.length}</span>
+                  </div>
+                  {!isCollapsed && (
+                    <div className="field-tree-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {list.map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setSelectedId(f.id)}
+                          className={`field-card ${f.id === selectedId ? 'active' : ''}`}
+                          style={{
+                            borderLeftWidth: 4,
+                            borderLeftColor: strokeColorForType(f.type, f.id === selectedId)
+                          }}
+                        >
+                          <div className="field-card-name">{f.name}</div>
+                          <div className="field-card-meta">
+                            x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}
+                          </div>
+                          {(() => {
+                            const disp = fieldDisplayValue(f.value)
+                            return disp ? (
+                              <div className="field-card-value" title={disp}>
+                                {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+                              </div>
+                            ) : null
+                          })()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             {!pageFields.length && <div className="hint">No fields on this page</div>}
           </div>
         </div>
