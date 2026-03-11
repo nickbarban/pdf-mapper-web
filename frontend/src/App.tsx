@@ -224,6 +224,12 @@ export default function App() {
   const [mappingName, setMappingName] = useState<string>('runA')
 
   const [pdf, setPdf] = useState<any>(null)
+  const [pdfName, setPdfName] = useState<string | null>(null)
+  const [collapsedTypes, setCollapsedTypes] = useState<{ text: boolean; numeric: boolean; checkbox: boolean }>({
+    text: true,
+    numeric: true,
+    checkbox: true
+  })
   const [pageNum, setPageNum] = useState<number>(1)
   const [numPages, setNumPages] = useState<number>(1)
   const [zoom, setZoom] = useState<number>(1.25)
@@ -317,6 +323,10 @@ export default function App() {
         if (!list.find(p => p.id === projectId) && list.length) {
           setProjectId(list[0].id)
         }
+        const proj = list.find(p => p.id === projectId)
+        if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
+          setMappingName(proj.mappings[0])
+        }
         return list
       })
       .catch(() => setProjects([]))
@@ -326,6 +336,18 @@ export default function App() {
     refreshProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    // reset displayed PDF name when switching project
+    setPdfName(null)
+  }, [projectId])
+
+  useEffect(() => {
+    const proj = projects.find(p => p.id === projectId)
+    if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
+      setMappingName(proj.mappings[0])
+    }
+  }, [projectId, projects])
 
   useEffect(() => {
     if (!projectId) return
@@ -381,6 +403,15 @@ export default function App() {
   }, [pdf, pageNum, zoom, pdfRotation])
 
   const pageFields = useMemo(() => mapping.fields.filter(f => f.page === pageNum), [mapping.fields, pageNum])
+
+  const groupedPageFields = useMemo(
+    () => ({
+      text: pageFields.filter(f => (f.type === 'numeric' || f.type === 'checkbox') ? false : true),
+      numeric: pageFields.filter(f => f.type === 'numeric'),
+      checkbox: pageFields.filter(f => f.type === 'checkbox')
+    }),
+    [pageFields]
+  )
 
   const stageSize = useMemo(
     () => ({ width: canvasSize.width, height: canvasSize.height }),
@@ -489,6 +520,7 @@ export default function App() {
       await refreshProjects()
       setPdf(null)
       setPdfRefreshKey(k => k + 1)
+      setPdfName(file.name || null)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to upload PDF')
     } finally {
@@ -573,6 +605,16 @@ export default function App() {
             <button type="button" className="btn btn-ghost btn-icon" onClick={createProject} title="New project">
               +
             </button>
+          </div>
+          <div className="form-group">
+            <label>Active PDF file</label>
+            <input
+              className="input"
+              type="text"
+              value={projectId ? (pdfName ?? 'source.pdf') : ''}
+              readOnly
+              disabled
+            />
           </div>
         </div>
 
@@ -868,25 +910,59 @@ export default function App() {
         <div className="section">
           <span className="section-label">Fields on this page</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pageFields.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedId(f.id)}
-                className={`field-card ${f.id === selectedId ? 'active' : ''}`}
-                style={{ borderLeftWidth: 4, borderLeftColor: strokeColorForType(f.type, f.id === selectedId) }}
-              >
-                <div className="field-card-name">{f.name}</div>
-                <div className="field-card-meta">x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}</div>
-                {(() => {
-                  const disp = fieldDisplayValue(f.value)
-                  return disp ? (
-                    <div className="field-card-value" title={disp}>
-                      {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+            {(['text', 'numeric', 'checkbox'] as const).map(type => {
+              const list = groupedPageFields[type]
+              const isCollapsed = collapsedTypes[type]
+              if (!list.length) return null
+              const label = type === 'text' ? 'Text' : type === 'numeric' ? 'Numeric' : 'Checkbox'
+              return (
+                <div key={type} className="field-tree-root">
+                  <div
+                    className="field-tree-header"
+                    onClick={() =>
+                      setCollapsedTypes(prev => ({
+                        ...prev,
+                        [type]: !prev[type]
+                      }))
+                    }
+                  >
+                    <div className="field-tree-header-left">
+                      <span className="field-tree-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                      <span className="field-tree-label">{label}</span>
                     </div>
-                  ) : null
-                })()}
-              </button>
-            ))}
+                    <span className="field-tree-count">{list.length}</span>
+                  </div>
+                  {!isCollapsed && (
+                    <div className="field-tree-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {list.map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setSelectedId(f.id)}
+                          className={`field-card ${f.id === selectedId ? 'active' : ''}`}
+                          style={{
+                            borderLeftWidth: 4,
+                            borderLeftColor: strokeColorForType(f.type, f.id === selectedId)
+                          }}
+                        >
+                          <div className="field-card-name">{f.name}</div>
+                          <div className="field-card-meta">
+                            x={Math.round(f.x)} y={Math.round(f.y)} w={Math.round(f.w)} h={Math.round(f.h)}
+                          </div>
+                          {(() => {
+                            const disp = fieldDisplayValue(f.value)
+                            return disp ? (
+                              <div className="field-card-value" title={disp}>
+                                {disp.length > 30 ? `${disp.slice(0, 30)}…` : disp}
+                              </div>
+                            ) : null
+                          })()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             {!pageFields.length && <div className="hint">No fields on this page</div>}
           </div>
         </div>
