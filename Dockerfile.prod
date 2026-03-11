@@ -29,4 +29,4 @@ COPY --from=backend /home/gradle/src/build/libs/*.jar /app/app.jar
 COPY --from=frontend /app/dist /app/static
 
 EXPOSE 8080
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=8080 -Dapp.staticLocations=file:/app/static/ -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${SERVER_PORT} -Dapp.staticLocations=${STATIC_LOCATIONS} -jar /app/app.jar"]

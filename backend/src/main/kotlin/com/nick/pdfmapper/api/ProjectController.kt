@@ -46,6 +46,10 @@ class ProjectController(
     val mappingName: String,
   )
 
+  companion object {
+    private val SAFE_NAME_REGEX = Regex("^[a-zA-Z0-9_.-]+$")
+  }
+
   @PostMapping("/projects")
   fun createProject(@RequestBody body: Map<String, String>): ProjectDto {
     val id = body["id"] ?: throw IllegalArgumentException("Missing project id")
@@ -78,11 +82,13 @@ class ProjectController(
   fun listTemplates(): List<String> {
     val templatesDir = Path.of(dataDir).resolve("templates")
     if (!Files.exists(templatesDir)) return emptyList()
-    return Files.list(templatesDir)
-      .filter { it.fileName.toString().endsWith(".pdf") }
-      .map { it.fileName.toString().removeSuffix(".pdf") }
-      .sorted()
-      .toList()
+    return Files.list(templatesDir).use { stream ->
+      stream
+        .filter { it.fileName.toString().endsWith(".pdf") }
+        .map { it.fileName.toString().removeSuffix(".pdf") }
+        .sorted()
+        .toList()
+    }
   }
 
   @GetMapping("/projects")
@@ -183,9 +189,17 @@ class ProjectController(
 
   @PostMapping("/render", produces = [MediaType.APPLICATION_PDF_VALUE])
   fun renderPdf(@RequestBody req: RenderRequest): ResponseEntity<ByteArray> {
-    val root = Path.of(dataDir)
-    val templatePath = root.resolve("templates").resolve("${req.templateName}.pdf")
-    val mappingPath = mappingsDir(req.projectId).resolve("${req.mappingName}.json")
+    require(req.templateName.matches(SAFE_NAME_REGEX)) { "Invalid template name: ${req.templateName}" }
+    require(req.mappingName.matches(SAFE_NAME_REGEX)) { "Invalid mapping name: ${req.mappingName}" }
+
+    val templatesRoot = Path.of(dataDir).resolve("templates").normalize()
+    val mappingsRoot = mappingsDir(req.projectId).normalize()
+
+    val templatePath = templatesRoot.resolve("${req.templateName}.pdf").normalize()
+    val mappingPath = mappingsRoot.resolve("${req.mappingName}.json").normalize()
+
+    require(templatePath.startsWith(templatesRoot)) { "Template path traversal detected" }
+    require(mappingPath.startsWith(mappingsRoot)) { "Mapping path traversal detected" }
 
     require(Files.exists(templatePath)) { "Template not found: $templatePath" }
     require(Files.exists(mappingPath)) { "Mapping not found: $mappingPath" }
@@ -197,7 +211,7 @@ class ProjectController(
       else -> mapper.createArrayNode()
     }
 
-    val doc = PDDocument.load(Files.newInputStream(templatePath))
+    val doc = PDDocument.load(templatePath.toFile())
     try {
       // group fields by page number (1-based)
       val byPage: Map<Int, List<JsonNode>> = fieldsNode.mapNotNull { field ->

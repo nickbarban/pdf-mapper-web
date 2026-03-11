@@ -298,6 +298,11 @@ export default function App() {
     setMapping(updater)
   }
 
+  function snapshotMapping() {
+    setHistory(h => [...h.slice(-(maxHistory - 1)), mappingRef.current])
+    setRedoStack([])
+  }
+
   function undo() {
     if (history.length === 0) return
     const prev = history[history.length - 1]
@@ -348,7 +353,7 @@ export default function App() {
     if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
       setMappingName(proj.mappings[0])
     }
-  }, [projectId, projects])
+  }, [projectId, projects, mappingName])
 
   useEffect(() => {
     if (!projectId) return
@@ -751,7 +756,12 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="form-group">
                   <label>Name</label>
-                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                  <input
+                    className="input"
+                    value={selectedField.name}
+                    onChange={e => updateSelected({ name: e.target.value })}
+                    onBlur={snapshotMapping}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Parsed</label>
@@ -768,6 +778,7 @@ export default function App() {
                     className="input"
                     value={selectedField.value?.custom ?? ''}
                     onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
+                    onBlur={snapshotMapping}
                     placeholder="Override or manual value"
                   />
                 </div>
@@ -777,6 +788,7 @@ export default function App() {
                     className="select"
                     value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
                     onChange={e => updateSelected({ type: e.target.value })}
+                    onBlur={snapshotMapping}
                   >
                     <option value="numeric">numeric</option>
                     <option value="text">text</option>
@@ -789,19 +801,43 @@ export default function App() {
                 <div className="form-grid">
                   <div className="form-group">
                     <label>x</label>
-                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.x}
+                      onChange={e => updateSelected({ x: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>y</label>
-                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.y}
+                      onChange={e => updateSelected({ y: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>w</label>
-                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.w}
+                      onChange={e => updateSelected({ w: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>h</label>
-                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.h}
+                      onChange={e => updateSelected({ h: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                 </div>
               </div>

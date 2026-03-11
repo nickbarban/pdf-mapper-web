@@ -15,10 +15,20 @@ jobs:
 
       - name: Set up SSH key
         run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "EC2_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "SSH_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+
           install -m 600 -d ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > ~/.ssh/deploy_key 2>/dev/null || echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Copy files to EC2
         env:
@@ -32,6 +42,12 @@ jobs:
             --exclude=backend/build \
             --exclude=backend/.gradle \
             --exclude=data \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.env.local' \
+            --exclude='.env.production' \
+            --exclude='.aws' \
+            --exclude='.ssh' \
             ./ $EC2_USER@${{ secrets.EC2_HOST }}:$DEPLOY_PATH/
 
       - name: Deploy on EC2
