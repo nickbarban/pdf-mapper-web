@@ -28,14 +28,19 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > ~/.ssh/deploy_key 2>/dev/null || echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          if [ -n "${{ secrets.EC2_HOST_KEY }}" ]; then
+            echo "${{ secrets.EC2_HOST_KEY }}" >> ~/.ssh/known_hosts
+            chmod 644 ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          fi
 
       - name: Copy files to EC2
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/home/ec2-user/pdf-mapper-web' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
         run: |
-          rsync -avz --delete \
+          rsync -avz \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
             --exclude=.git \
             --exclude=frontend/node_modules \
@@ -58,3 +63,11 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             $EC2_USER@${{ secrets.EC2_HOST }} \
             "cd $DEPLOY_PATH && docker compose -f docker-compose.prod.yml build --no-cache && docker compose -f docker-compose.prod.yml up -d"
+      - name: Verify deployment
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/home/ec2-user/pdf-mapper-web' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            $EC2_USER@${{ secrets.EC2_HOST }} \
+            "cd $DEPLOY_PATH && for cid in \$(docker compose -f docker-compose.prod.yml ps -q); do [ -z \"\$cid\" ] && continue; st=\$(docker inspect -f '{{.State.Status}}' \"\$cid\" 2>/dev/null); [ \"\$st\" != 'running' ] && echo \"Container \$cid status: \$st\" && exit 1; done && echo 'All containers running'"

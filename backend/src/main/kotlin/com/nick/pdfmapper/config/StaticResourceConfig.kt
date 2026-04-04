@@ -24,10 +24,21 @@ class StaticResourceConfig(
       .addResolver(object : PathResourceResolver() {
         @Throws(IOException::class)
         override fun getResource(resourcePath: String, location: Resource): Resource? {
-          val path = resourcePath.trimStart('/')
-          val resource = location.createRelative(if (path.isEmpty()) "index.html" else path)
-          return if (resource.exists() && resource.isReadable) resource
-          else location.createRelative("index.html").takeIf { it.exists() && it.isReadable }
+          // Delegate to default resolution first (includes path checks)
+          val candidate = super.getResource(resourcePath, location)
+          if (candidate != null) {
+            return candidate
+          }
+
+          // Fallback to index.html for SPA routes, with the same safety checks
+          val index = location.createRelative("index.html")
+          return if (index.exists() && index.isReadable) {
+            // PathResourceResolver.checkResource(...) is invoked internally by super.getResource,
+            // but here we only ever serve index.html from the configured static locations.
+            index
+          } else {
+            null
+          }
         }
       })
   }
