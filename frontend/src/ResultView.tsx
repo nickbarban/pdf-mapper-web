@@ -21,6 +21,7 @@ function updateResultUrl(projectId: string | null, templateName: string | null, 
 
 export default function ResultView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pdfUrlRef = useRef<string | null>(null)
   const [pdf, setPdf] = useState<any>(null)
   const [pageNum, setPageNum] = useState(1)
   const [numPages, setNumPages] = useState(1)
@@ -40,13 +41,25 @@ export default function ResultView() {
 
   useEffect(() => {
     fetch('/api/projects')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load projects: ${r.status}`)
+        return r.json()
+      })
       .then((list: Project[]) => setProjects(list))
-      .catch(() => setProjects([]))
+      .catch(err => {
+        console.error(err)
+        setProjects([])
+      })
     fetch('/api/templates')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load templates: ${r.status}`)
+        return r.json()
+      })
       .then((list: string[]) => setTemplates(list))
-      .catch(() => setTemplates([]))
+      .catch(err => {
+        console.error(err)
+        setTemplates([])
+      })
   }, [])
 
   useEffect(() => {
@@ -85,7 +98,11 @@ export default function ResultView() {
         throw new Error(await res.text())
       }
       const blob = await res.blob()
+      if (pdfUrlRef.current) {
+        URL.revokeObjectURL(pdfUrlRef.current)
+      }
       const objectUrl = URL.createObjectURL(blob)
+      pdfUrlRef.current = objectUrl
       const loadingTask = pdfjsLib.getDocument(objectUrl)
       const doc = await loadingTask.promise
       setPdf(doc)
@@ -126,12 +143,16 @@ export default function ResultView() {
   }, [projectId, mappingName, templateName, templates])
 
   useEffect(() => {
+    let cancelled = false
     if (!pdf || !canvasRef.current) return
     ;(async () => {
       const page = await pdf.getPage(pageNum)
+      if (cancelled) return
+      const canvas = canvasRef.current
+      if (!canvas) return
       const viewport = page.getViewport({ scale: zoom, rotation: pdfRotation })
-      const canvas = canvasRef.current!
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
 
       const w = Math.floor(viewport.width)
       const h = Math.floor(viewport.height)
@@ -142,7 +163,18 @@ export default function ResultView() {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       await page.render({ canvasContext: ctx, viewport }).promise
     })().catch(console.error)
+    return () => {
+      cancelled = true
+    }
   }, [pdf, pageNum, zoom, pdfRotation])
+
+  useEffect(() => {
+    return () => {
+      if (pdfUrlRef.current) {
+        URL.revokeObjectURL(pdfUrlRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div className="app">
@@ -217,7 +249,7 @@ export default function ResultView() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => renderPdf().catch(console.error)}
+            onClick={renderPdf}
             disabled={loading}
           >
             {loading ? 'Rendering…' : 'Render'}

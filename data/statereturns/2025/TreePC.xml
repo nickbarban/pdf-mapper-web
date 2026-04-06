@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<RETURNS>
+    <JURS id="11" o="1" displayCents="1">
+        <R n="Annual Foreign Premium Tax" num="114" o="0" sch="0" s="3" tid="GAGID12FORPCTTL" ri="InstGAForPCTTL.pdf"/>
+        <R n="Annual Domestic Premium Tax" num="112" o="1" sch="0" s="3" tid="GAGID12DOMPCTTL" ri="InstGADomPCTTL.pdf"/>
+        <R n="Estimate Premium Tax (3/20)" num="116" o="4" sch="0" s="3" tid="GAInst3" ri="InstGAEstimates.pdf"/>
+        <R n="Estimate Premium Tax (6/20)" num="117" o="5" sch="0" s="3" tid="GAInst6" ri="InstGAEstimates.pdf"/>
+        <R n="Estimate Premium Tax (9/20)" num="118" o="6" sch="0" s="3" tid="GAInst9" ri="InstGAEstimates.pdf"/>
+        <R n="Estimate Premium Tax (12/20)" num="119" o="7" sch="0" s="3" tid="GAInst12" ri="InstGAEstimates.pdf"/>
+    </JURS>
+    <JURS id="13" o="3">
+        <R n="Annual Premium Tax" num="132" o="0" sch="0" s="3" tid="IDPremPC" ri="IDPremPCInst.pdf"/>
+    </JURS>
+    <JURS id="30" o="4" displayCents="1">
+        <R n="Annual Premium Tax" num="303" o="0" sch="0" s="3" tid="NHPC" ri="InstNHPC.pdf"/>
+    </JURS>
+</RETURNS>

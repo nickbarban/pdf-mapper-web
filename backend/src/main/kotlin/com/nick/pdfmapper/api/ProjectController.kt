@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.logging.Logger
 import java.time.Instant
 
 @RestController
@@ -23,8 +24,14 @@ class ProjectController(
   @Value("\${app.dataDir}") private val dataDir: String,
   private val mapper: ObjectMapper,
 ) {
-  private fun projectsRoot(): Path = Path.of(dataDir).resolve("projects")
-  private fun projectDir(projectId: String): Path = projectsRoot().resolve(projectId)
+  private fun projectsRoot(): Path = Path.of(dataDir).resolve("projects").normalize()
+  private fun projectDir(projectId: String): Path {
+    require(projectId.matches(PROJECT_ID_REGEX)) { "Invalid project id: $projectId" }
+    val resolved = projectsRoot().resolve(projectId).normalize()
+    val root = projectsRoot()
+    require(resolved.startsWith(root)) { "Invalid project path" }
+    return resolved
+  }
   private fun mappingsDir(projectId: String): Path = projectDir(projectId).resolve("mappings")
 
   data class ProjectDto(
@@ -46,10 +53,16 @@ class ProjectController(
     val mappingName: String,
   )
 
+  companion object {
+    private val SAFE_NAME_REGEX = Regex("^[a-zA-Z0-9_.-]+$")
+    private val PROJECT_ID_REGEX = Regex("^[a-zA-Z0-9_-]+$")
+    private val log = Logger.getLogger(ProjectController::class.java.name)
+  }
+
   @PostMapping("/projects")
   fun createProject(@RequestBody body: Map<String, String>): ProjectDto {
     val id = body["id"] ?: throw IllegalArgumentException("Missing project id")
-    require(id.matches(Regex("^[a-zA-Z0-9_-]+$"))) { "Invalid project id: $id" }
+    require(id.matches(PROJECT_ID_REGEX)) { "Invalid project id: $id" }
     Files.createDirectories(projectsRoot())
     val dir = projectDir(id)
     Files.createDirectories(dir)
@@ -78,11 +91,13 @@ class ProjectController(
   fun listTemplates(): List<String> {
     val templatesDir = Path.of(dataDir).resolve("templates")
     if (!Files.exists(templatesDir)) return emptyList()
-    return Files.list(templatesDir)
-      .filter { it.fileName.toString().endsWith(".pdf") }
-      .map { it.fileName.toString().removeSuffix(".pdf") }
-      .sorted()
-      .toList()
+    return Files.list(templatesDir).use { stream ->
+      stream
+        .filter { it.fileName.toString().endsWith(".pdf") }
+        .map { it.fileName.toString().removeSuffix(".pdf") }
+        .sorted()
+        .toList()
+    }
   }
 
   @GetMapping("/projects")
@@ -183,9 +198,18 @@ class ProjectController(
 
   @PostMapping("/render", produces = [MediaType.APPLICATION_PDF_VALUE])
   fun renderPdf(@RequestBody req: RenderRequest): ResponseEntity<ByteArray> {
-    val root = Path.of(dataDir)
-    val templatePath = root.resolve("templates").resolve("${req.templateName}.pdf")
-    val mappingPath = mappingsDir(req.projectId).resolve("${req.mappingName}.json")
+    require(req.projectId.matches(PROJECT_ID_REGEX)) { "Invalid project id: ${req.projectId}" }
+    require(req.templateName.matches(SAFE_NAME_REGEX)) { "Invalid template name: ${req.templateName}" }
+    require(req.mappingName.matches(SAFE_NAME_REGEX)) { "Invalid mapping name: ${req.mappingName}" }
+
+    val templatesRoot = Path.of(dataDir).resolve("templates").normalize()
+    val mappingsRoot = mappingsDir(req.projectId).normalize()
+
+    val templatePath = templatesRoot.resolve("${req.templateName}.pdf").normalize()
+    val mappingPath = mappingsRoot.resolve("${req.mappingName}.json").normalize()
+
+    require(templatePath.startsWith(templatesRoot)) { "Template path traversal detected" }
+    require(mappingPath.startsWith(mappingsRoot)) { "Mapping path traversal detected" }
 
     require(Files.exists(templatePath)) { "Template not found: $templatePath" }
     require(Files.exists(mappingPath)) { "Mapping not found: $mappingPath" }
@@ -197,7 +221,7 @@ class ProjectController(
       else -> mapper.createArrayNode()
     }
 
-    val doc = PDDocument.load(Files.newInputStream(templatePath))
+    val doc = PDDocument.load(templatePath.toFile())
     try {
       // group fields by page number (1-based)
       val byPage: Map<Int, List<JsonNode>> = fieldsNode.mapNotNull { field ->
@@ -239,14 +263,24 @@ class ProjectController(
             val rectCenterX = pdfX + (w / 2).toFloat()
             val rectCenterY = pdfY + (h / 2).toFloat()
 
-            val textWidth = (font.getStringWidth(text) / 1000f) * fontSize
+            val (drawText, textWidth) = try {
+              val tw = (font.getStringWidth(text) / 1000f) * fontSize
+              text to tw
+            } catch (e: IllegalArgumentException) {
+              val fallbackText = text.map { c ->
+                if (c.code in 0..255) c else '?'
+              }.joinToString("")
+              log.warning("Font encoding fallback for field '$name': replaced unmappable characters")
+              val tw = (font.getStringWidth(fallbackText) / 1000f) * fontSize
+              fallbackText to tw
+            }
             val rightBound = (pdfX + w.toFloat() - textWidth).coerceAtLeast(pdfX)
             val startX = (rectCenterX - textWidth / 2f).coerceIn(pdfX, rightBound)
             val baselineY = rectCenterY - fontSize * 0.35f
 
             cs.beginText()
             cs.newLineAtOffset(startX, baselineY)
-            cs.showText(text)
+            cs.showText(drawText)
             cs.endText()
           }
         }

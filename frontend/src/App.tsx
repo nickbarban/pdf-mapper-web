@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Stage, Layer, Rect, Transformer } from 'react-konva'
+import { Stage, Layer, Rect, Transformer, Line, Text, Group } from 'react-konva'
 import * as pdfjsLib from 'pdfjs-dist'
 
 // pdf.js worker (Vite-friendly)
@@ -213,6 +213,71 @@ function canvasToField(
   }
 }
 
+function CanvasRulers({
+  zoom,
+  canvasWidth,
+  canvasHeight,
+  rotation
+}: {
+  zoom: number
+  canvasWidth: number
+  canvasHeight: number
+  rotation: PdfRotation
+}) {
+  const rulerSize = 25
+  const ticks = []
+  
+  const stepDoc = 50
+  const stepScreen = stepDoc * zoom
+  
+  const minorStepDoc = 10
+  const minorStepScreen = minorStepDoc * zoom
+
+  // Horizontal ruler
+  for (let x = 0; x < canvasWidth; x += minorStepScreen) {
+    const docVal = Math.round(x / zoom)
+    const isMajor100 = docVal % 100 === 0
+    const isMajor50 = docVal % 50 === 0
+    const tickHeight = isMajor100 ? rulerSize : isMajor50 ? rulerSize * 0.6 : rulerSize * 0.3
+    ticks.push(
+      <Line key={`x_tick_${x}`} points={[x, 0, x, tickHeight]} stroke="rgba(0,0,0,0.5)" strokeWidth={1} listening={false} />
+    )
+    if (isMajor50) {
+      const { x: fieldX, y: fieldY } = canvasToField(x, 0, 0, 0, zoom, canvasWidth, canvasHeight, rotation)
+      const label = rotation === 90 || rotation === 270 ? Math.round(fieldY) : Math.round(fieldX)
+      ticks.push(
+        <Text key={`x_text_${x}`} x={x + 2} y={isMajor100 ? 2 : 3} text={String(label)} fontSize={isMajor100 ? 10 : 8} fill={isMajor100 ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.45)'} listening={false} />
+      )
+    }
+  }
+
+  // Vertical ruler
+  for (let y = 0; y < canvasHeight; y += minorStepScreen) {
+    const docVal = Math.round(y / zoom)
+    const isMajor100 = docVal % 100 === 0
+    const isMajor50 = docVal % 50 === 0
+    const tickWidth = isMajor100 ? rulerSize : isMajor50 ? rulerSize * 0.6 : rulerSize * 0.3
+    ticks.push(
+      <Line key={`y_tick_${y}`} points={[0, y, tickWidth, y]} stroke="rgba(0,0,0,0.5)" strokeWidth={1} listening={false} />
+    )
+    if (isMajor50 && y > 0) {
+      const { x: fieldX, y: fieldY } = canvasToField(0, y, 0, 0, zoom, canvasWidth, canvasHeight, rotation)
+      const label = rotation === 90 || rotation === 270 ? Math.round(fieldX) : Math.round(fieldY)
+      ticks.push(
+        <Text key={`y_text_${y}`} x={2} y={y + 2} text={String(label)} fontSize={isMajor100 ? 10 : 8} fill={isMajor100 ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.45)'} listening={false} />
+      )
+    }
+  }
+
+  return (
+    <Group listening={false}>
+      <Rect x={0} y={0} width={canvasWidth} height={rulerSize} fill="rgba(255,255,255,0.85)" listening={false} />
+      <Rect x={0} y={0} width={rulerSize} height={canvasHeight} fill="rgba(255,255,255,0.85)" listening={false} />
+      {ticks}
+    </Group>
+  )
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const shapeRef = useRef<any>(null)
@@ -298,6 +363,11 @@ export default function App() {
     setMapping(updater)
   }
 
+  function snapshotMapping() {
+    setHistory(h => [...h.slice(-(maxHistory - 1)), mappingRef.current])
+    setRedoStack([])
+  }
+
   function undo() {
     if (history.length === 0) return
     const prev = history[history.length - 1]
@@ -348,7 +418,7 @@ export default function App() {
     if (proj?.mappings?.length && !proj.mappings.includes(mappingName)) {
       setMappingName(proj.mappings[0])
     }
-  }, [projectId, projects])
+  }, [projectId, projects, mappingName])
 
   useEffect(() => {
     if (!projectId) return
@@ -751,7 +821,12 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="form-group">
                   <label>Name</label>
-                  <input className="input" value={selectedField.name} onChange={e => updateSelected({ name: e.target.value })} />
+                  <input
+                    className="input"
+                    value={selectedField.name}
+                    onChange={e => updateSelected({ name: e.target.value })}
+                    onBlur={snapshotMapping}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Parsed</label>
@@ -768,6 +843,7 @@ export default function App() {
                     className="input"
                     value={selectedField.value?.custom ?? ''}
                     onChange={e => updateSelected({ value: { ...selectedField.value, custom: e.target.value } })}
+                    onBlur={snapshotMapping}
                     placeholder="Override or manual value"
                   />
                 </div>
@@ -777,6 +853,7 @@ export default function App() {
                     className="select"
                     value={selectedField.type === 'numeric' || selectedField.type === 'checkbox' ? selectedField.type : 'text'}
                     onChange={e => updateSelected({ type: e.target.value })}
+                    onBlur={snapshotMapping}
                   >
                     <option value="numeric">numeric</option>
                     <option value="text">text</option>
@@ -789,19 +866,43 @@ export default function App() {
                 <div className="form-grid">
                   <div className="form-group">
                     <label>x</label>
-                    <input className="input" type="number" value={selectedField.x} onChange={e => updateSelected({ x: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.x}
+                      onChange={e => updateSelected({ x: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>y</label>
-                    <input className="input" type="number" value={selectedField.y} onChange={e => updateSelected({ y: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.y}
+                      onChange={e => updateSelected({ y: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>w</label>
-                    <input className="input" type="number" value={selectedField.w} onChange={e => updateSelected({ w: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.w}
+                      onChange={e => updateSelected({ w: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                   <div className="form-group">
                     <label>h</label>
-                    <input className="input" type="number" value={selectedField.h} onChange={e => updateSelected({ h: Number(e.target.value) })} />
+                    <input
+                      className="input"
+                      type="number"
+                      value={selectedField.h}
+                      onChange={e => updateSelected({ h: Number(e.target.value) })}
+                      onBlur={snapshotMapping}
+                    />
                   </div>
                 </div>
               </div>
@@ -929,6 +1030,12 @@ export default function App() {
                     }}
                   />
                 )}
+                <CanvasRulers
+                  zoom={zoom}
+                  canvasWidth={stageSize.width}
+                  canvasHeight={stageSize.height}
+                  rotation={pdfRotation}
+                />
               </Layer>
             </Stage>
           </div>

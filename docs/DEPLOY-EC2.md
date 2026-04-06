@@ -5,7 +5,7 @@
 - **AMI**: Amazon Linux 2023 or Ubuntu 22.04
 - **Instance type**: `t2.micro` or `t3.micro` (free tier eligible)
 - **Storage**: 8–30 GB
-- **Security group**: allow SSH (22) from your IP or 0.0.0.0/0; allow HTTP (80) and custom 5171, 5172 if you want direct access, or put behind a reverse proxy later.
+- **Security group**: allow SSH (22) only from your IP or a small trusted CIDR (avoid 0.0.0.0/0); allow HTTP (80) and custom 5171, 5172 if you want direct access, or put behind a reverse proxy later. Consider using AWS Session Manager or a bastion host instead of wide-open SSH.
 
 ## 2. Install Docker on EC2
 
